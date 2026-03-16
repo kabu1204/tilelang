@@ -4,6 +4,8 @@ import tilelang as tl
 import tilelang.language as T
 import pytest
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 tilelang.testing.set_random_seed()
 
 REDUCE_SUM_CASES = [

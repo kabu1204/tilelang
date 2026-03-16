@@ -3,6 +3,8 @@ import tilelang.language as T
 import torch
 import tilelang.testing
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 
 @tilelang.jit(
     out_idx=[1],

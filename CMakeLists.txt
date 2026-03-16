@@ -22,26 +22,42 @@ endif()
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.gitmodules" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
-  find_package(Git QUIET)
-  if(Git_FOUND)
-    execute_process(
-      COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      RESULT_VARIABLE TILELANG_GIT_SUBMODULE_RESULT
-    )
-    if(NOT TILELANG_GIT_SUBMODULE_RESULT EQUAL 0)
+  set(TILELANG_SUBMODULE_MARKERS
+      "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tvm/CMakeLists.txt"
+      "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cutlass/CMakeLists.txt"
+      "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/composable_kernel/CMakeLists.txt")
+  set(TILELANG_SUBMODULES_READY ON)
+  foreach(_marker IN LISTS TILELANG_SUBMODULE_MARKERS)
+    if(NOT EXISTS "${_marker}")
+      set(TILELANG_SUBMODULES_READY OFF)
+      break()
+    endif()
+  endforeach()
+
+  if(TILELANG_SUBMODULES_READY)
+    message(STATUS "TileLang submodules already initialized; skipping git submodule update")
+  else()
+    find_package(Git QUIET)
+    if(Git_FOUND)
+      execute_process(
+        COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        RESULT_VARIABLE TILELANG_GIT_SUBMODULE_RESULT
+      )
+      if(NOT TILELANG_GIT_SUBMODULE_RESULT EQUAL 0)
+        message(
+          FATAL_ERROR
+            "Failed to initialize git submodules. Please run "
+            "`git submodule update --init --recursive` and re-run CMake."
+        )
+      endif()
+    else()
       message(
         FATAL_ERROR
-          "Failed to initialize git submodules. Please run "
-          "`git submodule update --init --recursive` and re-run CMake."
+          "Git is required to initialize TileLang submodules. "
+          "Please install git or fetch the submodules manually."
       )
     endif()
-  else()
-    message(
-      FATAL_ERROR
-        "Git is required to initialize TileLang submodules. "
-        "Please install git or fetch the submodules manually."
-    )
   endif()
 endif()
 

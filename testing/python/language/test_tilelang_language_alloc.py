@@ -37,6 +37,7 @@ def run_alloc_var(
     assert "tmp =" in code or "tmp[0] =" in code
 
 
+@tilelang.testing.requires_cuda
 def test_alloc_var():
     run_alloc_var(1024, 128, T.float16)
 
@@ -77,6 +78,7 @@ def run_alloc_var_add(
     assert "tmp =" in code or "tmp[0] =" in code
 
 
+@tilelang.testing.requires_cuda
 def test_alloc_var_add():
     run_alloc_var_add(1024, 128, T.float16)
 

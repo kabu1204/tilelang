@@ -1,6 +1,8 @@
 import tilelang.testing
 from tilelang import language as T
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 
 def clamp_within_bounds(
     N,

@@ -6,6 +6,8 @@ import tilelang.testing
 import torch
 from tvm.tir.stmt_functor import post_order_visit
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 auto_target = tvm.target.Target(determine_target("auto"))
 sm80_target = tvm.target.Target("cuda -arch=sm_80")
 

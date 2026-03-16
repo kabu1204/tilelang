@@ -9,6 +9,8 @@ from tvm import tir
 
 auto_target = tvm.target.Target(determine_target("auto"))
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 
 def _apply(func):
     mod = tvm.IRModule.from_expr(func.with_attr("global_symbol", "main"))

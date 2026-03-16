@@ -175,6 +175,8 @@ class TVMFFIKernelAdapter(BaseKernelAdapter):
 
         dynamic_symbolic_map = self._process_dynamic_symbolic()
         executable = self.executable
+        entry_name = str(self.prim_func.attrs["global_symbol"])
+        executable_func = self._resolve_executable_function(executable, entry_name)
 
         # Prepare helpers for friendly dtype error messages
         prim_func = self.prim_func
@@ -241,7 +243,7 @@ class TVMFFIKernelAdapter(BaseKernelAdapter):
                     ins_idx += 1
                 tensor_list.append(tensor)
 
-            executable(*tensor_list)
+            executable_func(*tensor_list)
 
             # Return outputs in the requested form
             if len(self.result_idx) == 1:
@@ -249,6 +251,29 @@ class TVMFFIKernelAdapter(BaseKernelAdapter):
             return [tensor_list[i] for i in self.result_idx]
 
         return func
+
+    @staticmethod
+    def _resolve_executable_function(
+        executable: runtime.Executable | runtime.Module, entry_name: str
+    ) -> Callable[..., Any]:
+        entry_candidates = [entry_name]
+        if entry_name != "main":
+            entry_candidates.append("main")
+
+        if isinstance(executable, runtime.Executable):
+            for candidate in entry_candidates:
+                try:
+                    return executable[candidate]
+                except AttributeError:
+                    continue
+            raise AttributeError(f"Executable has no function matching {entry_candidates!r}")
+
+        for candidate in entry_candidates:
+            try:
+                return executable.get_function(candidate, query_imports=True)
+            except AttributeError:
+                continue
+        raise AttributeError(f"Module has no function matching {entry_candidates!r}")
 
     @classmethod
     def from_database(

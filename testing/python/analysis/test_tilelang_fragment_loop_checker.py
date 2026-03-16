@@ -99,7 +99,7 @@ def valid_loop_not_frag(dtype: T.dtype = T.bfloat16, accum_dtype: T.dtype = T.fl
         data: T.Tensor((128, A), dtype),  # type: ignore
     ):
         with T.Kernel(128, threads=num_threads) as (tid,):
-            data_shared = T.alloc_shared([128], accum_dtype)
+            data_shared = T.alloc_shared([128], accum_dtype, scope="shared")
 
             for i in T.Parallel(128):
                 if i < A:
@@ -120,7 +120,7 @@ def valid_loop_serial(dtype: T.dtype = T.bfloat16, accum_dtype: T.dtype = T.floa
         data: T.Tensor((128, A), dtype),  # type: ignore
     ):
         with T.Kernel(128, threads=num_threads) as (tid,):
-            data_shared = T.alloc_shared([128], accum_dtype)
+            data_shared = T.alloc_shared([128], accum_dtype, scope="shared")
 
             for i in T.Parallel(128):
                 if i < A:

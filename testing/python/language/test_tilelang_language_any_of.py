@@ -3,6 +3,8 @@ import tilelang.testing
 import tilelang.language as T
 import torch
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 
 def ref_program(A, B, BlockMask, block_M, block_N, block_K):
     M, K = A.shape

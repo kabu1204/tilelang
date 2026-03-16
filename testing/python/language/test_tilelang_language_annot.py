@@ -3,6 +3,8 @@ import tilelang.language as T
 import tilelang.testing
 import torch
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 
 def test_tensor_annot_mul():
     # There is a known issue where the cython execution backend fails to build with T.symbolic.

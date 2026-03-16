@@ -1,7 +1,10 @@
 import math
 
 import tilelang
+import tilelang.testing
 import tilelang.language as T
+
+pytestmark = tilelang.testing.requires_cuda.marks()
 
 
 def blocksparse_flashattn(batch, heads, seq_len, dim, downsample_len, is_causal):

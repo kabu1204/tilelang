@@ -4,6 +4,8 @@ import tilelang
 import tilelang.testing
 import tilelang.language as T
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 
 @tilelang.jit
 def get_kernel(reduce_op: str, dtype: str):

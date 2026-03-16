@@ -29,11 +29,24 @@ from tilelang.transform import PassConfigKey
 from tilelang.transform.pass_config import normalize_pass_configs
 import logging
 import os
+import sys
 
 logger = logging.getLogger(__name__)
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
+
+
+def _legalize_tvm_ffi_entry_symbol(func: PrimFunc, execution_backend: str) -> PrimFunc:
+    """Avoid Darwin host JIT compiling a shared-library entrypoint named ``main``."""
+    if execution_backend != "tvm_ffi" or sys.platform != "darwin":
+        return func
+
+    global_symbol = func.attrs.get("global_symbol") if func.attrs else None
+    if str(global_symbol) != "main":
+        return func
+
+    return func.with_attr("global_symbol", "tilelang_main")
 
 
 class JITKernel(Generic[_P, _T]):
@@ -225,6 +238,7 @@ class JITKernel(Generic[_P, _T]):
 
         execution_backend = self.execution_backend
         pass_configs = dict(self.pass_configs) if self.pass_configs else {}
+        tilelang_func = _legalize_tvm_ffi_entry_symbol(tilelang_func, execution_backend)
 
         compile_flags = self.compile_flags
         if compile_flags is not None:

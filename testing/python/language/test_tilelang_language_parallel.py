@@ -4,6 +4,8 @@ import torch
 import tilelang.testing
 import pytest
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 tilelang.testing.set_random_seed()
 
 

@@ -1,5 +1,8 @@
 import tilelang
+import tilelang.testing
 import tilelang.language as T
+
+pytestmark = tilelang.testing.requires_cuda.marks()
 
 
 # add decorator @tilelang.jit if you want to return a torch function

@@ -4,6 +4,8 @@ from tilelang.utils.target import determine_target
 import tilelang.language as T
 import tilelang.testing
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 auto_target = tvm.target.Target(determine_target("auto"))
 
 

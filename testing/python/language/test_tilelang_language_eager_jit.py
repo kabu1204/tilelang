@@ -4,6 +4,8 @@ import tilelang.language as T
 from itertools import product
 import torch
 
+pytestmark = tilelang.testing.requires_cuda.marks()
+
 
 def test_jit2_gemm():
     @tilelang.jit(verbose=True)
