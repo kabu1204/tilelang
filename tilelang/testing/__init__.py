@@ -5,7 +5,7 @@ import random
 import torch
 import numpy as np
 from tilelang.contrib import nvcc
-from tvm.testing.utils import requires_cuda, requires_package, requires_llvm, requires_metal, requires_rocm, _compose
+from tvm.testing.utils import requires_cuda, requires_package, requires_llvm, requires_metal, requires_rocm, requires_vulkan, _compose
 
 from tilelang.utils.tensor import torch_assert_close as torch_assert_close
 from .perf_regression import process_func, regression
@@ -14,6 +14,7 @@ __all__ = [
     "requires_package",
     "requires_cuda",
     "requires_metal",
+    "requires_vulkan",
     "requires_rocm",
     "requires_llvm",
     "main",

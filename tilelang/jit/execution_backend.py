@@ -39,6 +39,10 @@ def allowed_backends_for_target(target: Target, *, include_unavailable: bool = T
         allowed = ["tvm_ffi", "cython"]
     elif kind == "metal":
         allowed = ["tvm_ffi", "torch"]
+    elif kind == "vulkan":
+        # Stage 0 Vulkan support is codegen-only. Keep execution backends empty
+        # so callers do not interpret Vulkan as runnable through compile/jit.
+        allowed = []
     elif kind == "c":  # CPU C backend
         allowed = ["cython", "tvm_ffi"]
     else:
@@ -74,12 +78,17 @@ def resolve_execution_backend(requested: str | None, target: Target) -> str:
     req = _canon_backend(requested)
     allowed_all = allowed_backends_for_target(target, include_unavailable=True)
     allowed_avail = allowed_backends_for_target(target, include_unavailable=False)
+    kind = _target_kind(target)
+
+    if not allowed_all:
+        raise ValueError(
+            f"Target '{kind}' is supported for lowering/codegen only (`tilelang.lower(..., target=\"{kind}\")`). "
+        )
 
     # Default selection for auto/None
     if req in (None, "auto"):
         if is_cutedsl_target(target):
             return "cutedsl"
-        kind = _target_kind(target)
         if kind == "cuda" or kind == "metal":
             choice = "tvm_ffi"
         else:

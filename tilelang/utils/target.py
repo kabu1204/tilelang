@@ -16,6 +16,7 @@ SUPPORTED_TARGETS: dict[str, str] = {
     "cuda": "CUDA GPU target (supports options such as `cuda -arch=sm_80`).",
     "hip": "ROCm HIP target (supports options like `hip -mcpu=gfx90a`).",
     "metal": "Apple Metal target for arm64 Macs.",
+    "vulkan": "Vulkan GPU target (supports options like `vulkan -device=adreno`).",
     "llvm": "LLVM CPU target (accepts standard TVM LLVM options).",
     "webgpu": "WebGPU target for browser/WebGPU runtimes.",
     "c": "C source backend.",
@@ -62,6 +63,14 @@ def check_metal_availability() -> bool:
         return False
     # todo: check torch version?
     return arch == "arm64"
+
+
+def check_vulkan_availability() -> bool:
+    try:
+        import os
+        return os.environ.get("VULKAN_SDK") is not None
+    except Exception:
+        return False
 
 
 def determine_fp8_type(fp8_format: Literal["e4m3", "e5m2"] = "e4m3") -> str:

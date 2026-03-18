@@ -115,6 +115,10 @@ def is_cutedsl_target(target: Target) -> bool:
     return target.kind.name == "cuda" and "cutedsl" in target.keys
 
 
+def is_vulkan_target(target: Target) -> bool:
+    return target.kind.name == "vulkan"
+
+
 def get_annotated_mod(
     func_or_mod: tir.PrimFunc | tvm.IRModule,
     target: str | Target = "auto",
