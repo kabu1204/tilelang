@@ -190,6 +190,70 @@ def matmul(M, N, K, block_M, block_N, block_K, dtype=T.float32, accum_dtype=T.fl
     return main
 
 
+def simple_serial_loop(N, block_N):
+    @T.prim_func
+    def main(
+        A: T.Tensor((N,), T.float32),
+        B: T.Tensor((N,), T.float32),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), threads=128) as (bx,):
+            for i in T.Serial(block_N):
+                B[bx * block_N + i] = A[bx * block_N + i] * 2.0
+
+    return main
+
+
+def nested_serial_loops(M, N, block_M, block_N):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, N), T.float32),
+        B: T.Tensor((M, N), T.float32),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=128) as (bx, by):
+            for i in T.Serial(block_M):
+                for j in T.Serial(block_N):
+                    B[by * block_M + i, bx * block_N + j] = A[by * block_M + i, bx * block_N + j] + 1.0
+
+    return main
+
+
+def parallel_serial_combo(M, N, block_M, block_N):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, N), T.float32),
+        B: T.Tensor((M, N), T.float32),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=128) as (bx, by):
+            for i, j in T.Parallel(block_M, block_N):
+                for k in T.Serial(4):
+                    B[by * block_M + i, bx * block_N + j] += A[by * block_M + i, bx * block_N + j]
+
+    return main
+
+
+def matmul_serial_only(M, N, K, block_M, block_N, block_K):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, K), T.float32),
+        B: T.Tensor((K, N), T.float32),
+        C: T.Tensor((M, N), T.float32),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=128) as (bx, by):
+            A_shared = T.alloc_shared((block_M, block_K), T.float32, scope="shared")
+            B_shared = T.alloc_shared((block_K, block_N), T.float32, scope="shared")
+            C_local = T.alloc_fragment((block_M, block_N), T.float32)
+            T.clear(C_local)
+            for ko in T.Serial(T.ceildiv(K, block_K)):
+                T.copy(A[by * block_M, ko * block_K], A_shared)
+                T.copy(B[ko * block_K, bx * block_N], B_shared)
+                for i, j in T.Parallel(block_M, block_N):
+                    for k in T.Serial(block_K):
+                        C_local[i, j] += A_shared[i, k] * B_shared[k, j]
+            T.copy(C_local, C[by * block_M, bx * block_N])
+
+    return main
+
+
 def assert_vulkan_codegen(func):
     with tvm.transform.PassContext(), tvm.target.Target("vulkan"):
         artifact = tilelang.lower(func, target="vulkan")
@@ -235,12 +299,25 @@ def test_vulkan_codegen_fragment_fill():
 def test_vulkan_codegen_copy_through_shared():
     assert_vulkan_codegen(copy_through_shared(256, 256, 16, 16))
 
-@pytest.mark.skip(
-    reason="TVM Vulkan/SPIR-V codegen emits invalid OpPhi for looped matmul kernels"
-)
 @requires_vulkan_codegen
 def test_vulkan_codegen_matmul():
     assert_vulkan_codegen(matmul(1024, 1024, 1024, 16, 16, 16))
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_simple_serial_loop():
+    assert_vulkan_codegen(simple_serial_loop(1024, 16))
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_nested_serial_loops():
+    assert_vulkan_codegen(nested_serial_loops(256, 256, 16, 16))
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_parallel_serial_combo():
+    assert_vulkan_codegen(parallel_serial_combo(256, 256, 16, 16))
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_matmul_serial_only():
+    assert_vulkan_codegen(matmul_serial_only(256, 256, 256, 16, 16, 16))
 
 def test_vulkan_compile_rejected():
     with pytest.raises(ValueError):
