@@ -78,6 +78,91 @@ def elemwise_mul(N, dtype=T.float32):
     return main
 
 
+def elemwise_sub(N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        A: T.Tensor((N,), dtype),
+        B: T.Tensor((N,), dtype),
+        C: T.Tensor((N,), dtype),
+    ):
+        with T.Kernel(N, threads=1) as (bx,):
+            C[bx] = A[bx] - B[bx]
+
+    return main
+
+
+def elemwise_fma(N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        A: T.Tensor((N,), dtype),
+        B: T.Tensor((N,), dtype),
+        C: T.Tensor((N,), dtype),
+        D: T.Tensor((N,), dtype),
+    ):
+        with T.Kernel(N, threads=1) as (bx,):
+            D[bx] = A[bx] * B[bx] + C[bx]
+
+    return main
+
+
+def matrix_add(M, N, block_M, block_N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, N), dtype),
+        B: T.Tensor((M, N), dtype),
+        C: T.Tensor((M, N), dtype),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=128) as (bx, by):
+            for i, j in T.Parallel(block_M, block_N):
+                C[by * block_M + i, bx * block_N + j] = (
+                    A[by * block_M + i, bx * block_N + j] + B[by * block_M + i, bx * block_N + j]
+                )
+
+    return main
+
+
+def copy_2d(M, N, block_M, block_N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, N), dtype),
+        B: T.Tensor((M, N), dtype),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=128) as (bx, by):
+            T.copy(
+                A[by * block_M:(by + 1) * block_M, bx * block_N:(bx + 1) * block_N],
+                B[by * block_M:(by + 1) * block_M, bx * block_N:(bx + 1) * block_N],
+            )
+
+    return main
+
+
+def fragment_fill_and_copy(M, N, block_M, block_N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        C: T.Tensor((M, N), dtype),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=128) as (bx, by):
+            C_local = T.alloc_fragment((block_M, block_N), dtype)
+            T.clear(C_local)
+            T.copy(C_local, C[by * block_M, bx * block_N])
+
+    return main
+
+
+def copy_through_shared(M, N, block_M, block_N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, N), dtype),
+        B: T.Tensor((M, N), dtype),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=128) as (bx, by):
+            A_shared = T.alloc_shared((block_M, block_N), dtype, scope="shared")
+            T.copy(A[by * block_M, bx * block_N], A_shared)
+            T.copy(A_shared, B[by * block_M, bx * block_N])
+
+    return main
+
+
 def matmul(M, N, K, block_M, block_N, block_K, dtype=T.float32, accum_dtype=T.float32):
     @T.prim_func
     def main(
@@ -114,30 +199,48 @@ def assert_vulkan_codegen(func):
     assert src_code is not None
     assert len(src_code) > 0
 
-
 @requires_vulkan_codegen
 def test_vulkan_codegen_elemwise_add():
     assert_vulkan_codegen(elemwise_add(1024))
 
+@requires_vulkan_codegen
+def test_vulkan_codegen_elemwise_sub():
+    assert_vulkan_codegen(elemwise_sub(1024))
 
 @requires_vulkan_codegen
 def test_vulkan_codegen_elemwise_mul_float32():
     assert_vulkan_codegen(elemwise_mul(1024, dtype=T.float32))
 
-
 @requires_vulkan_codegen
 def test_vulkan_codegen_elemwise_mul_int32():
     assert_vulkan_codegen(elemwise_mul(1024, dtype=T.int32))
 
+@requires_vulkan_codegen
+def test_vulkan_codegen_elemwise_fma():
+    assert_vulkan_codegen(elemwise_fma(1024))
 
-@pytest.mark.xfail(
-    reason="TVM Vulkan/SPIR-V codegen emits invalid OpPhi for looped matmul kernels",
-    raises=tvm.error.InternalError,
+@requires_vulkan_codegen
+def test_vulkan_codegen_matrix_add():
+    assert_vulkan_codegen(matrix_add(256, 256, 16, 16))
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_copy_2d():
+    assert_vulkan_codegen(copy_2d(256, 256, 16, 16))
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_fragment_fill():
+    assert_vulkan_codegen(fragment_fill_and_copy(256, 256, 16, 16))
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_copy_through_shared():
+    assert_vulkan_codegen(copy_through_shared(256, 256, 16, 16))
+
+@pytest.mark.skip(
+    reason="TVM Vulkan/SPIR-V codegen emits invalid OpPhi for looped matmul kernels"
 )
 @requires_vulkan_codegen
 def test_vulkan_codegen_matmul():
     assert_vulkan_codegen(matmul(1024, 1024, 1024, 16, 16, 16))
-
 
 def test_vulkan_compile_rejected():
     with pytest.raises(ValueError):
