@@ -24,6 +24,9 @@ bool TargetIsMetal(Target target) {
 bool TargetIsCPU(Target target) {
   return target->GetTargetDeviceType() == kDLCPU;
 }
+bool TargetIsVulkan(Target target) {
+  return target->GetTargetDeviceType() == kDLVulkan;
+}
 
 int GetArchInt(Target target) {
   auto s = target->GetAttr<tvm::ffi::String>("arch");

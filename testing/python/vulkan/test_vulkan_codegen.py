@@ -23,6 +23,38 @@ requires_vulkan_codegen = pytest.mark.skipif(
     reason="Requires TVM Vulkan codegen support (`target.build.vulkan`)",
 )
 
+_VK_API_VERSION_1_1 = (1 << 22) | (1 << 12)
+_SPIRV_VERSION_1_3 = 0x10300
+
+
+def make_test_vulkan_target(device: str | None = None, **overrides) -> tvm.target.Target:
+    attrs = {
+        "kind": "vulkan",
+        "supports_storage_buffer_storage_class": True,
+        "vulkan_api_version": _VK_API_VERSION_1_1,
+        "max_spirv_version": _SPIRV_VERSION_1_3,
+        "supports_float32": True,
+        "supports_int32": True,
+        "max_threads_per_block": 256,
+        "max_num_threads": 256,
+        "max_shared_memory_per_block": 32768,
+        "thread_warp_size": 1,
+    }
+    if device:
+        attrs["device"] = device
+    attrs.update(overrides)
+    return tvm.target.Target(attrs)
+
+
+def make_test_adreno_target(**overrides) -> tvm.target.Target:
+    attrs = {
+        "supports_float16": True,
+        "supports_16bit_buffer": True,
+        "max_shared_memory_per_block": 32768,
+    }
+    attrs.update(overrides)
+    return make_test_vulkan_target(device="adreno", **attrs)
+
 
 def _maybe_print_kernel_source(src_code: str) -> None:
     """Print kernel source when explicitly enabled.
@@ -255,8 +287,9 @@ def matmul_serial_only(M, N, K, block_M, block_N, block_K):
 
 
 def assert_vulkan_codegen(func):
-    with tvm.transform.PassContext(), tvm.target.Target("vulkan"):
-        artifact = tilelang.lower(func, target="vulkan")
+    target = make_test_vulkan_target()
+    with tvm.transform.PassContext(), tvm.target.Target(target):
+        artifact = tilelang.lower(func, target=target)
 
     src_code = artifact.kernel_source
     _maybe_print_kernel_source(src_code)
@@ -322,6 +355,37 @@ def test_vulkan_codegen_matmul_serial_only():
 def test_vulkan_compile_rejected():
     with pytest.raises(ValueError):
         tilelang.compile(elemwise_add(16), out_idx=[2], target="vulkan")
+
+
+@requires_vulkan_codegen
+def test_vulkan_test_target_attrs():
+    target = make_test_vulkan_target()
+    assert target.kind.name == "vulkan"
+    assert target.attrs.get("supports_storage_buffer_storage_class", None) is True
+    assert target.attrs.get("vulkan_api_version", None) == (1 << 22) | (1 << 12)
+
+
+@requires_vulkan_codegen
+def test_vulkan_test_adreno_target_attrs():
+    """Should set Adreno-specific attrs for explicit test targets."""
+    target = make_test_adreno_target()
+    assert target.kind.name == "vulkan"
+    assert "adreno" in target.keys
+    assert target.attrs.get("supports_float16", None) is True
+    assert target.attrs.get("supports_16bit_buffer", None) is True
+
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_uses_storage_buffer():
+    """Should produce StorageBuffer, not Uniform+BufferBlock"""
+    target = make_test_vulkan_target()
+    with tvm.transform.PassContext(), tvm.target.Target(target):
+        artifact = tilelang.lower(elemwise_add(256), target=target)
+    src = artifact.kernel_source
+    _maybe_print_kernel_source(src)
+    assert src is not None
+    assert len(src) > 0
+    assert "BufferBlock" not in src
 
 
 if __name__ == "__main__":
