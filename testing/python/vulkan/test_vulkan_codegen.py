@@ -12,6 +12,7 @@ import tilelang
 from tilelang import tvm as tvm
 import tilelang.testing
 import tilelang.language as T
+from tilelang.utils.target import determine_target, target_get_warp_size
 
 
 def _has_vulkan_codegen() -> bool:
@@ -195,6 +196,67 @@ def copy_through_shared(M, N, block_M, block_N, dtype=T.float32):
     return main
 
 
+def clear_shared(M, N, block_M, block_N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        C: T.Tensor((M, N), dtype),
+    ):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=128) as (bx, by):
+            buf = T.alloc_shared((block_M, block_N), dtype, scope="shared")
+            T.clear(buf)
+            T.copy(buf, C[by * block_M, bx * block_N])
+
+    return main
+
+
+def reduce_sum_shared(M, N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, N), dtype),
+        B: T.Tensor((M,), dtype),
+    ):
+        with T.Kernel(1) as _:
+            A_shared = T.alloc_shared((M, N), dtype)
+            B_shared = T.alloc_shared((M,), dtype)
+            T.copy(A, A_shared)
+            T.reduce_sum(A_shared, B_shared, dim=1)
+            T.copy(B_shared, B)
+
+    return main
+
+
+def reduce_max_shared(M, N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, N), dtype),
+        B: T.Tensor((M,), dtype),
+    ):
+        with T.Kernel(1) as _:
+            A_shared = T.alloc_shared((M, N), dtype)
+            B_shared = T.alloc_shared((M,), dtype)
+            T.copy(A, A_shared)
+            T.reduce_max(A_shared, B_shared, dim=1)
+            T.copy(B_shared, B)
+
+    return main
+
+
+def reduce_sum_fragment(M, N, dtype=T.float32):
+    @T.prim_func
+    def main(
+        A: T.Tensor((M, N), dtype),
+        B: T.Tensor((M,), dtype),
+    ):
+        with T.Kernel(1, threads=32) as _:
+            A_local = T.alloc_fragment((M, N), dtype)
+            B_local = T.alloc_fragment((M,), dtype)
+            T.copy(A, A_local)
+            T.reduce_sum(A_local, B_local, dim=1)
+            T.copy(B_local, B)
+
+    return main
+
+
 def matmul(M, N, K, block_M, block_N, block_K, dtype=T.float32, accum_dtype=T.float32):
     @T.prim_func
     def main(
@@ -351,6 +413,31 @@ def test_vulkan_codegen_parallel_serial_combo():
 @requires_vulkan_codegen
 def test_vulkan_codegen_matmul_serial_only():
     assert_vulkan_codegen(matmul_serial_only(256, 256, 256, 16, 16, 16))
+
+@requires_vulkan_codegen
+def test_vulkan_codegen_clear_shared():
+    assert_vulkan_codegen(clear_shared(256, 256, 16, 16))
+
+@requires_vulkan_codegen
+@pytest.mark.skip(
+    reason="T.reduce emits tl::AllReduce extern call, which SPIR-V rejects."
+)
+def test_vulkan_codegen_reduce_sum_shared():
+    assert_vulkan_codegen(reduce_sum_shared(64, 64))
+
+@requires_vulkan_codegen
+@pytest.mark.skip(
+    reason="T.reduce emits tl::AllReduce extern call, which SPIR-V rejects."
+)
+def test_vulkan_codegen_reduce_max_shared():
+    assert_vulkan_codegen(reduce_max_shared(64, 64))
+
+@requires_vulkan_codegen
+@pytest.mark.skip(
+    reason="T.reduce emits tl::AllReduce extern call, which SPIR-V rejects."
+)
+def test_vulkan_codegen_reduce_sum_fragment():
+    assert_vulkan_codegen(reduce_sum_fragment(64, 64))
 
 def test_vulkan_compile_rejected():
     with pytest.raises(ValueError):
