@@ -1037,8 +1037,9 @@ private:
     if (!tile_op.defined())
       return IRMutatorWithAnalyzer::VisitStmt_(op);
     AddWorkspaceCallback callback = [this](int num_elem, DataType dtype) {
+      std::string scope = TargetIsVulkan(target_) ? "shared" : "shared.dyn";
       auto workspace =
-          decl_buffer({PrimExpr(num_elem)}, dtype, "workspace", "shared.dyn");
+          decl_buffer({PrimExpr(num_elem)}, dtype, "workspace", scope);
       // Record workspace under the innermost block scope so its lifetime
       // covers the statements that requested it and does not sink into
       // subsequently created inner blocks (e.g., GEMM macro blocks).
@@ -1048,7 +1049,7 @@ private:
         // Fallback: create a temporary frame (should be rare)
         workspace_stack_.emplace_back(Array<Buffer>{workspace});
       }
-      return workspace.access_ptr(2); // write
+      return workspace;
     };
 
     Range thread_bounds = CurrentThreadBounds();

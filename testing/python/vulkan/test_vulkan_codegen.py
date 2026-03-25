@@ -216,8 +216,8 @@ def reduce_sum_shared(M, N, dtype=T.float32):
         B: T.Tensor((M,), dtype),
     ):
         with T.Kernel(1) as _:
-            A_shared = T.alloc_shared((M, N), dtype)
-            B_shared = T.alloc_shared((M,), dtype)
+            A_shared = T.alloc_shared((M, N), dtype, scope="shared")
+            B_shared = T.alloc_shared((M,), dtype, scope="shared")
             T.copy(A, A_shared)
             T.reduce_sum(A_shared, B_shared, dim=1)
             T.copy(B_shared, B)
@@ -232,8 +232,8 @@ def reduce_max_shared(M, N, dtype=T.float32):
         B: T.Tensor((M,), dtype),
     ):
         with T.Kernel(1) as _:
-            A_shared = T.alloc_shared((M, N), dtype)
-            B_shared = T.alloc_shared((M,), dtype)
+            A_shared = T.alloc_shared((M, N), dtype, scope="shared")
+            B_shared = T.alloc_shared((M,), dtype, scope="shared")
             T.copy(A, A_shared)
             T.reduce_max(A_shared, B_shared, dim=1)
             T.copy(B_shared, B)
@@ -419,23 +419,14 @@ def test_vulkan_codegen_clear_shared():
     assert_vulkan_codegen(clear_shared(256, 256, 16, 16))
 
 @requires_vulkan_codegen
-@pytest.mark.skip(
-    reason="T.reduce emits tl::AllReduce extern call, which SPIR-V rejects."
-)
 def test_vulkan_codegen_reduce_sum_shared():
     assert_vulkan_codegen(reduce_sum_shared(64, 64))
 
 @requires_vulkan_codegen
-@pytest.mark.skip(
-    reason="T.reduce emits tl::AllReduce extern call, which SPIR-V rejects."
-)
 def test_vulkan_codegen_reduce_max_shared():
     assert_vulkan_codegen(reduce_max_shared(64, 64))
 
 @requires_vulkan_codegen
-@pytest.mark.skip(
-    reason="T.reduce emits tl::AllReduce extern call, which SPIR-V rejects."
-)
 def test_vulkan_codegen_reduce_sum_fragment():
     assert_vulkan_codegen(reduce_sum_fragment(64, 64))
 

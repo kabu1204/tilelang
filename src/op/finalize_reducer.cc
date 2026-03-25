@@ -112,9 +112,9 @@ Stmt FinalizeReducerOpNode::Lower(const LowerArgs &T,
   Array<PrimExpr> thread_reduce_args = {StringImm(ss.str()),
                                         BufferLoad(buffer, indices_0)};
   if (reducing_threads >= 32) {
-    PrimExpr workspace =
+    Buffer workspace_buf =
         T.AddWorkspace(*as_const_int(T.thread_bounds->extent), buffer->dtype);
-    thread_reduce_args.push_back(workspace);
+    thread_reduce_args.push_back(workspace_buf.access_ptr(2));
   }
   auto call = Call(buffer->dtype, builtin::call_extern(), thread_reduce_args);
   Stmt body = BufferStore(buffer, call, indices_0);

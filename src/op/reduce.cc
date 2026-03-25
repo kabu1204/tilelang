@@ -286,6 +286,7 @@ Stmt ReduceOpNode::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
         dst_vars.Map([](const auto &iv) { return PrimExpr(iv->var); }));
 
     Array<Stmt> stmts;
+    Buffer vulkan_workspace;  // for vulkan inline reduce
 
     auto require_init = this->clear;
     if (this->type->isSum() || this->type->isAbsSum() ||
@@ -392,33 +393,69 @@ Stmt ReduceOpNode::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
           continue;
 
         int reducing_threads = (*extent) * (*scale);
-        std::stringstream ss;
-
         auto thread_offset = T.thread_bounds->min;
-        if (TargetHasSMVersionGE(T.target, 90)) {
-          auto all_threads = T.thread_bounds->extent;
-          ss << "tl::AllReduce<" << this->MakeCodegenReducer() << ", "
-             << reducing_threads << ", " << (*scale) << ", " << thread_offset
-             << ", tl::NamedBarrier<" << all_threads << ">>::run";
-        } else {
-          ss << "tl::AllReduce<" << this->MakeCodegenReducer() << ", "
-             << reducing_threads << ", " << (*scale) << ", " << thread_offset
-             << ">::run";
+
+        if (TargetIsCuda(T.target) || TargetIsRocm(T.target)
+            || TargetIsMetal(T.target)) {
+            // CUDA / HIP / Metal: emit extern call to tl::AllReduce template.
+            std::stringstream ss;
+            if (TargetHasSMVersionGE(T.target, 90)) {
+              auto all_threads = T.thread_bounds->extent;
+              ss << "tl::AllReduce<" << this->MakeCodegenReducer() << ", "
+                  << reducing_threads << ", " << (*scale) << ", " << thread_offset
+                  << ", tl::NamedBarrier<" << all_threads << ">>::run";
+            } else {
+              ss << "tl::AllReduce<" << this->MakeCodegenReducer() << ", "
+                  << reducing_threads << ", " << (*scale) << ", " << thread_offset
+                  << ">::run";
+            }
+            Array<PrimExpr> thread_reduce_args = {
+                StringImm(ss.str()), BufferLoad(clear_buffer, red_indices)};
+            // The butterfly reduce path needs one shared-memory slot per
+            // thread in the block.
+            if (reducing_threads > 32) {
+              int workspace_size =
+                  static_cast<int>(*as_const_int(T.thread_bounds->extent));
+              Buffer workspace_buf =
+                  T.AddWorkspace(workspace_size, clear_buffer->dtype);
+              thread_reduce_args.push_back(workspace_buf.access_ptr(2));
+            }
+            auto call = Call(clear_buffer->dtype, builtin::call_extern(),
+                              thread_reduce_args);
+            stmts.push_back(BufferStore(clear_buffer, call, red_indices));
         }
-        Array<PrimExpr> thread_reduce_args = {
-            StringImm(ss.str()), BufferLoad(clear_buffer, red_indices)};
-        // The butterfly reduce path needs one shared-memory slot per
-        // thread in the block.
-        if (reducing_threads > 32) {
-          int workspace_size =
+        else if (TargetIsVulkan(T.target)) {
+          // vulkan inline reduce
+          int ws_size =
               static_cast<int>(*as_const_int(T.thread_bounds->extent));
-          PrimExpr workspace =
-              T.AddWorkspace(workspace_size, clear_buffer->dtype);
-          thread_reduce_args.push_back(workspace);
+          if (!vulkan_workspace.defined()) {
+            vulkan_workspace = T.AddWorkspace(ws_size, clear_buffer->dtype);
+          }
+          PrimExpr tid = T.thread_var - thread_offset;
+          auto sync_shared = [&]() {
+            return Evaluate(Call(DataType::Int(32),
+                                builtin::tvm_storage_sync(),
+                                {StringImm("shared")}));
+          };
+          int offset = reducing_threads / 2;
+          while (offset >= *scale) {
+            stmts.push_back(sync_shared());
+            stmts.push_back(BufferStore(
+                vulkan_workspace,
+                BufferLoad(clear_buffer, red_indices), {tid}));
+            stmts.push_back(sync_shared());
+            PrimExpr partner =
+                BufferLoad(vulkan_workspace, {tid ^ PrimExpr(offset)});
+            stmts.push_back(BufferStore(
+                clear_buffer,
+                this->MakeReduce(BufferLoad(clear_buffer, red_indices),
+                                 partner),
+                red_indices));
+            offset /= 2;
+          }
+        } else {
+          LOG(FATAL) << "Unsupported target: " << T.target;
         }
-        auto call = Call(clear_buffer->dtype, builtin::call_extern(),
-                         thread_reduce_args);
-        stmts.push_back(BufferStore(clear_buffer, call, red_indices));
       }
     }
 

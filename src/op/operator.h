@@ -24,7 +24,7 @@ namespace tl {
 
 using namespace tir;
 
-using AddWorkspaceCallback = std::function<PrimExpr(int, DataType)>;
+using AddWorkspaceCallback = std::function<Buffer(int, DataType)>;
 using AllocMBarrierCallback = std::function<int(int arrive_count)>;
 using LayoutMap = Map<Buffer, Layout>;
 using BufferMap = Map<Var, Buffer>;
